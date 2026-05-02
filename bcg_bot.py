@@ -190,16 +190,21 @@ RULES: Start directly, titles in English, descriptions in Korean.
 
 
 # ── GitHub 업데이트 ────────────────────────────────────────────────────────────────────────────
+def fetch_json(url, headers, headers_raw):
+    """SHA는 일반 API로, 내용은 raw API로 가져와 1MB 제한 우회."""
+    sha  = requests.get(url, headers=headers).json()["sha"]
+    data = json.loads(requests.get(url, headers=headers_raw).text)
+    return data, sha
+
 def update_board(entries, target_date, board_date):
-    headers  = {"Authorization": f"token {GH_TOKEN}"}
-    base_url = f"https://api.github.com/repos/{REPO_NAME}/contents"
-    date_dot = board_date.strftime("%Y.%m.%d")
+    headers     = {"Authorization": f"token {GH_TOKEN}"}
+    headers_raw = {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github.raw"}
+    base_url    = f"https://api.github.com/repos/{REPO_NAME}/contents"
+    date_dot    = board_date.strftime("%Y.%m.%d")
 
     # ① bcg_data.json
-    url = f"{base_url}/bcg_data.json"
-    res = requests.get(url, headers=headers).json()
-    data = json.loads(base64.b64decode(res["content"]).decode())
-    sha  = res["sha"]
+    url  = f"{base_url}/bcg_data.json"
+    data, sha = fetch_json(url, headers, headers_raw)
     existing_ids = {item["id"] for item in data}
     added = 0
     for entry in reversed(entries):
@@ -229,10 +234,8 @@ def update_board(entries, target_date, board_date):
             print(f"  오류: {r.text[:200]}")
 
     # ② index_data.json
-    url = f"{base_url}/index_data.json"
-    res = requests.get(url, headers=headers).json()
-    data = json.loads(base64.b64decode(res["content"]).decode())
-    sha  = res["sha"]
+    url  = f"{base_url}/index_data.json"
+    data, sha = fetch_json(url, headers, headers_raw)
     existing_idx_ids = {item["id"] for item in data}
     idx_added = 0
     for entry in reversed(entries):
@@ -250,6 +253,7 @@ def update_board(entries, target_date, board_date):
         idx_added += 1
     if idx_added > 0:
         data.sort(key=lambda x: (x["date"], x["id"]), reverse=True)
+        data = data[:300]
         r = requests.put(url, headers=headers, json={
             "message": f"BCG index: {date_dot} ({len(entries)}건)",
             "content": base64.b64encode(json.dumps(data, ensure_ascii=False).encode()).decode(),
