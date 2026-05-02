@@ -1,0 +1,42 @@
+name: BCG Report Bot
+
+on:
+  schedule:
+    - cron: '0 15 * * *'   # UTC 15:00 = KST 00:00 (자정)
+  workflow_dispatch:
+    inputs:
+      target_date:
+        description: '대상 날짜 (YYYY-MM-DD), 비워두면 어제'
+        required: false
+        default: ''
+      send_telegram:
+        description: '텔레그램 발송 (true/false)'
+        required: false
+        default: 'true'
+
+jobs:
+  send-summary:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 코드 가져오기
+        uses: actions/checkout@v3
+
+      - name: Python 설치
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: 패키지 설치
+        run: pip install -r requirements.txt
+
+      - name: BCG 리포트 요약 전송
+        env:
+          GMAIL_ADDRESS:      ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          ANTHROPIC_API_KEY:  ${{ secrets.ANTHROPIC_API_KEY }}
+          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+          GH_TOKEN:           ${{ secrets.GH_TOKEN }}
+          ARCHIVE_BOT_TOKEN:  ${{ secrets.ARCHIVE_BOT_TOKEN }}
+          TARGET_DATE:        ${{ github.event.inputs.target_date }}
+          SEND_TELEGRAM:      ${{ github.event.inputs.send_telegram || 'true' }}
+        run: python bcg_bot.py
