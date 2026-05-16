@@ -11,7 +11,7 @@ from email.header import decode_header
 from email.utils import parsedate
 from bs4 import BeautifulSoup
 
-# ── 환경변수 ────────────────────────────────────────────────────────────────────────────────
+# ── 환경변수 ──────────────────────────────────────────────────────
 GMAIL_ADDRESS      = os.environ["GMAIL_ADDRESS"]
 GMAIL_APP_PASSWORD = os.environ["GMAIL_APP_PASSWORD"]
 ANTHROPIC_API_KEY  = os.environ["ANTHROPIC_API_KEY"]
@@ -24,8 +24,16 @@ KST         = timezone(timedelta(hours=9))
 REPO_NAME   = "RyanHSoo/hsbotboard"
 ARCHIVE_URL = "https://ryanhsoo.github.io/hsbotboard/bcg.html"
 
+# Claude 응답이 실패(메타코멘터리)임을 나타내는 패턴
+ERROR_PATTERNS = [
+    "i appreciate your", "i must be transparent", "the email content provided is incomplete",
+    "i cannot", "i don't have access", "i'm unable", "i am unable",
+    "incomplete email", "no actual content", "the content you provided",
+    "i need to inform", "unfortunately", "i apologize",
+]
 
-# ── Gmail 읽기 ─────────────────────────────────────────────────────────────────────────────────
+
+# ── Gmail 읽기 ─────────────────────────────────────────────────────────────────────────────────────────
 def get_bcg_emails(target_date):
     """target_date: datetime (KST) — 해당 날짜 수신 이메일 반환"""
     mail = imaplib.IMAP4_SSL("imap.gmail.com")
@@ -110,14 +118,16 @@ def get_bcg_emails(target_date):
     return emails
 
 
-# ── Claude 요약 ──────────────────────────────────────────────────────────────────────────────────
+# ── Claude 요약 ────────────────────────────────────────────────────────────────────────────────────────
 def summarize_email(email_data):
     client  = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     subject = email_data["subject"]
     body    = email_data["body"]
     titles  = email_data["report_titles"]
 
-    if email_data["has_content"]:
+    use_web_search = not email_data["has_content"]
+
+    if not use_web_search:
         prompt = f"""You are a BCG report analyst for senior executives.
 
 Summarize the BCG email content below.
@@ -146,14 +156,22 @@ RULES:
 """
         response = client.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=2000,
+            max_tokens=3500,
             messages=[{"role": "user", "content": prompt}]
         )
-        return response.content[0].text.strip()
+        result = response.content[0].text.strip()
 
-    else:
-        titles_text = "\n".join([f"- {t}" for t in titles])
-        prompt = f"""You are a BCG report analyst for senior executives.
+        # 응답이 메타코멘터리이면 web_search 모드로 재시도
+        result_lower = result.lower()
+        if any(p in result_lower for p in ERROR_PATTERNS) or len(result) < 80:
+            print("  [WARN] body 요약 실패 (개시란 컨텐츠 불충분), web_search 모드로 재시도")
+            use_web_search = True
+        else:
+            return result
+
+    # web_search 모드 (원래 or 폴백)
+    titles_text = "\n".join([f"- {t}" for t in titles])
+    prompt = f"""You are a BCG report analyst for senior executives.
 
 Search the web for each BCG report title below and summarize them.
 
@@ -176,20 +194,20 @@ If NOT found:
 
 RULES: Start directly, titles in English, descriptions in Korean.
 """
-        response = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=2000,
-            tools=[{"type": "web_search_20250305", "name": "web_search"}],
-            messages=[{"role": "user", "content": prompt}]
-        )
-        result = ""
-        for block in response.content:
-            if block.type == "text":
-                result += block.text
-        return result.strip()
+    response = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=3500,
+        tools=[{"type": "web_search_20250305", "name": "web_search"}],
+        messages=[{"role": "user", "content": prompt}]
+    )
+    result = ""
+    for block in response.content:
+        if block.type == "text":
+            result += block.text
+    return result.strip()
 
 
-# ── GitHub 업데이트 ────────────────────────────────────────────────────────────────────────────
+# ── GitHub 업데이트 ──────────────────────────────────────────────────────────────────────────────
 def fetch_json(url, headers, headers_raw):
     """SHA는 일반 API로, 내용은 raw API로 가져와 1MB 제한 우회."""
     sha  = requests.get(url, headers=headers).json()["sha"]
@@ -210,7 +228,7 @@ def update_board(entries, target_date, board_date):
     for entry in reversed(entries):
         row_id = f"row-{entry['row_id']}"
         if row_id in existing_ids:
-            print(f"  중복 스킵: {row_id}")
+            print(f"  중복 스�: {row_id}")
             continue
         data.insert(0, {
             "id":     row_id,
@@ -264,7 +282,7 @@ def update_board(entries, target_date, board_date):
             print(f"  오류: {r.text[:200]}")
 
 
-# ── 텔레그램 ───────────────────────────────────────────────────────────────────────────────────
+# ── 텔레그램 ───────────────────────────────────────────────────────────────────────────────────────
 def send_telegram(text):
     import time
     for attempt in range(3):
