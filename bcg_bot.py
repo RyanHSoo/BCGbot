@@ -24,12 +24,19 @@ KST         = timezone(timedelta(hours=9))
 REPO_NAME   = "RyanHSoo/hsbotboard"
 ARCHIVE_URL = "https://ryanhsoo.github.io/hsbotboard/bcg.html"
 
-# Claude 응답이 실패(메타코멘터리)임을 나타내는 패턴
+# Claude 응답이 실패(메타코멘터리)임을 나타내는 패턴 (영어/한국어/일본어)
 ERROR_PATTERNS = [
+    # 영어
     "i appreciate your", "i must be transparent", "the email content provided is incomplete",
     "i cannot", "i don't have access", "i'm unable", "i am unable",
     "incomplete email", "no actual content", "the content you provided",
     "i need to inform", "unfortunately", "i apologize",
+    # 한국어
+    "죄송합니다", "제공해 주신", "이메일 내용이", "정확한 분석이", "불완전한",
+    "본문이 없", "내용이 없", "확인이 필요", "원문을 제공", "전체 내용을",
+    # 일본어
+    "申し訳", "提供いただいた", "完全な情報", "正確な分析", "メールコンテンツ",
+    "記事本文がない", "コンテンツは", "ご対応をお願い",
 ]
 
 
