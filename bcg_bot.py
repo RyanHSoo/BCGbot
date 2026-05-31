@@ -32,12 +32,24 @@ ERROR_PATTERNS = [
     "incomplete email", "no actual content", "the content you provided",
     "i need to inform", "unfortunately", "i apologize",
     # 한국어
-    "죄송합니다", "제공해 주신", "이메일 내용이", "정확한 분석이", "불완전한",
-    "본문이 없", "내용이 없", "확인이 필요", "원문을 제공", "전체 내용을",
+    "죄송합니다", "죄송하지만", "제공해 주신", "제공하신", "이메일 내용이", "정확한 분석이",
+    "불완전한", "본문이 없", "내용이 없", "확인이 필요", "원문을 제공", "전체 내용을",
+    "완전한 보고서", "실질적인 기사", "html 테이블", "보완전한", "누락되어",
+    "권장사항", "웹페이지 버전", "이메일 본문",
     # 일본어
     "申し訳", "提供いただいた", "完全な情報", "正確な分析", "メールコンテンツ",
     "記事本文がない", "コンテンツは", "ご対応をお願い",
 ]
+
+
+def _slug_to_title(href):
+    """BCG URL 슬러그에서 기사 제목 추출: /publications/2026/four-ways-... → 'Four Ways ...'"""
+    slug = href.rstrip("/").split("/")[-1]
+    slug = re.sub(r"-20\d{2}$", "", slug)          # 연도 suffix 제거
+    slug = re.sub(r"^\d{4}-", "", slug)             # 연도 prefix 제거
+    title = slug.replace("-", " ").title()
+    # 짧거나 의미없는 slug 제외
+    return title if len(title) > 15 else ""
 
 
 # ── Gmail 읽기 ─────────────────────────────────────────────────────────────────────────────────────────
@@ -87,14 +99,25 @@ def get_bcg_emails(target_date):
                     body_text += decoded[:5000]
                 elif content_type == "text/html":
                     soup = BeautifulSoup(decoded, "html.parser")
+                    seen_titles = set()
                     for a in soup.find_all("a", href=True):
                         href = a.get("href", "")
                         if "bcg.com" in href:
                             if any(p in href for p in ["/publications/", "/insights/",
                                                        "/capabilities/", "/industries/",
                                                        "/featured-insights/"]):
+                                # 1순위: 앵커 텍스트
                                 title = a.get_text(strip=True)
-                                if 15 < len(title) < 200 and title not in report_titles:
+                                # 2순위: 내부 img alt 텍스트
+                                if not title or len(title) < 15:
+                                    img = a.find("img")
+                                    if img:
+                                        title = img.get("alt", "").strip()
+                                # 3순위: URL 슬러그에서 추출
+                                if not title or len(title) < 15:
+                                    title = _slug_to_title(href)
+                                if title and 15 < len(title) < 200 and title not in seen_titles:
+                                    seen_titles.add(title)
                                     report_titles.append(title)
                     if not body_text:
                         for tag in soup(["script", "style", "nav", "footer", "header"]):
